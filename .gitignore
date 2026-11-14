@@ -1,0 +1,19 @@
+# IDE (GoLand / IntelliJ)
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Build output (go build ./cmd/server)
+/server
+/bin/
+*.exe
+*.test
+*.out
+
+# Environment
+.env
