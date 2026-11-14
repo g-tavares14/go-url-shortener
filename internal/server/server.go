@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go-url-shortener/internal/storage"
 	"log/slog"
 	"net/http"
 	"time"
 )
 
 type Server struct {
+	Store storage.Storage
 }
 
 func (s *Server) Run(ctx context.Context, port int) error {
