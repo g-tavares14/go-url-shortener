@@ -8,87 +8,6 @@ import (
 	"time"
 )
 
-func TestMemorySaveAndGet(t *testing.T) {
-	m := NewMemory()
-
-	if err := m.Save("abc", Link{URL: "https://go.dev"}); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	got, err := m.Get("abc")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
-	if got.URL != "https://go.dev" {
-		t.Errorf("Get().URL = %q, want %q", got.URL, "https://go.dev")
-	}
-}
-
-func TestMemoryGetUnknownCode(t *testing.T) {
-	m := NewMemory()
-
-	_, err := m.Get("missing")
-
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("err = %v, want %v", err, ErrNotFound)
-	}
-}
-
-func TestMemorySaveDuplicateCode(t *testing.T) {
-	m := NewMemory()
-	if err := m.Save("abc", Link{URL: "https://first.example"}); err != nil {
-		t.Fatal(err)
-	}
-
-	err := m.Save("abc", Link{URL: "https://second.example"})
-
-	if !errors.Is(err, ErrCodeExists) {
-		t.Errorf("err = %v, want %v", err, ErrCodeExists)
-	}
-	// The first URL must not be overwritten.
-	if got, _ := m.Get("abc"); got.URL != "https://first.example" {
-		t.Errorf("Get().URL = %q, want %q", got.URL, "https://first.example")
-	}
-}
-
-// Run with `go test -race` to make the race detector check the mutex.
-func TestMemoryConcurrentAccess(t *testing.T) {
-	m := NewMemory()
-	var wg sync.WaitGroup
-
-	for i := range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			code := fmt.Sprintf("code%d", i)
-			if err := m.Save(code, Link{URL: "https://go.dev"}); err != nil {
-				t.Errorf("Save(%q): %v", code, err)
-			}
-			if _, err := m.Get(code); err != nil {
-				t.Errorf("Get(%q): %v", code, err)
-			}
-		}()
-	}
-
-	wg.Wait()
-}
-
-func TestMemorySaveKeepsExpiresAt(t *testing.T) {
-	m := NewMemory()
-	expiresAt := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-	if err := m.Save("abc", Link{URL: "https://go.dev", ExpiresAt: expiresAt}); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := m.Get("abc")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !got.ExpiresAt.Equal(expiresAt) {
-		t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expiresAt)
-	}
-}
-
 func TestLinkExpired(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 
@@ -113,59 +32,136 @@ func TestLinkExpired(t *testing.T) {
 	}
 }
 
-func TestMemoryIncrementClicks(t *testing.T) {
-	m := NewMemory()
-	if err := m.Save("abc", Link{URL: "https://go.dev"}); err != nil {
-		t.Fatal(err)
-	}
+// testStorage is the contract every Storage must follow. Memory, Postgres and
+// Cached all run it, so they are guaranteed to behave the same way.
+// newStore must return an empty storage each time it is called.
+func testStorage(t *testing.T, newStore func(t *testing.T) Storage) {
+	t.Run("save and get", func(t *testing.T) {
+		s := newStore(t)
 
-	for range 3 {
-		if err := m.IncrementClicks("abc"); err != nil {
-			t.Fatalf("IncrementClicks: %v", err)
+		if err := s.Save(t.Context(), "abc", Link{URL: "https://go.dev"}); err != nil {
+			t.Fatalf("Save: %v", err)
 		}
-	}
 
-	got, _ := m.Get("abc")
-	if got.Clicks != 3 {
-		t.Errorf("Clicks = %d, want 3", got.Clicks)
-	}
-	if got.URL != "https://go.dev" {
-		t.Errorf("URL = %q, want it unchanged", got.URL)
-	}
-}
+		got, err := s.Get(t.Context(), "abc")
+		if err != nil {
+			t.Fatalf("Get: %v", err)
+		}
+		if got.URL != "https://go.dev" {
+			t.Errorf("URL = %q, want %q", got.URL, "https://go.dev")
+		}
+		if !got.ExpiresAt.IsZero() {
+			t.Errorf("ExpiresAt = %v, want zero (never expires)", got.ExpiresAt)
+		}
+	})
 
-func TestMemoryIncrementClicksUnknownCode(t *testing.T) {
-	m := NewMemory()
+	t.Run("keeps expires_at", func(t *testing.T) {
+		s := newStore(t)
+		expiresAt := time.Now().UTC().Add(time.Hour).Truncate(time.Second)
 
-	err := m.IncrementClicks("missing")
+		if err := s.Save(t.Context(), "abc", Link{URL: "https://go.dev", ExpiresAt: expiresAt}); err != nil {
+			t.Fatal(err)
+		}
 
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("err = %v, want %v", err, ErrNotFound)
-	}
-}
+		got, err := s.Get(t.Context(), "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !got.ExpiresAt.Equal(expiresAt) {
+			t.Errorf("ExpiresAt = %v, want %v", got.ExpiresAt, expiresAt)
+		}
+	})
 
-// Run with `go test -race`: 100 goroutines incrementing the same link must
-// not lose any click.
-func TestMemoryIncrementClicksConcurrent(t *testing.T) {
-	m := NewMemory()
-	if err := m.Save("abc", Link{URL: "https://go.dev"}); err != nil {
-		t.Fatal(err)
-	}
-	var wg sync.WaitGroup
+	t.Run("get unknown code", func(t *testing.T) {
+		s := newStore(t)
 
-	for range 100 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if err := m.IncrementClicks("abc"); err != nil {
-				t.Errorf("IncrementClicks: %v", err)
+		_, err := s.Get(t.Context(), "missing")
+
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("err = %v, want %v", err, ErrNotFound)
+		}
+	})
+
+	t.Run("save duplicate code", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Save(t.Context(), "abc", Link{URL: "https://first.example"}); err != nil {
+			t.Fatal(err)
+		}
+
+		err := s.Save(t.Context(), "abc", Link{URL: "https://second.example"})
+
+		if !errors.Is(err, ErrCodeExists) {
+			t.Errorf("err = %v, want %v", err, ErrCodeExists)
+		}
+		// The first URL must not be overwritten.
+		if got, _ := s.Get(t.Context(), "abc"); got.URL != "https://first.example" {
+			t.Errorf("URL = %q, want %q", got.URL, "https://first.example")
+		}
+	})
+
+	t.Run("count clicks", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Save(t.Context(), "abc", Link{URL: "https://go.dev"}); err != nil {
+			t.Fatal(err)
+		}
+
+		if got, err := s.Clicks(t.Context(), "abc"); err != nil || got != 0 {
+			t.Fatalf("Clicks before any visit = %d, %v; want 0, nil", got, err)
+		}
+		for range 3 {
+			if err := s.IncrementClicks(t.Context(), "abc"); err != nil {
+				t.Fatalf("IncrementClicks: %v", err)
 			}
-		}()
-	}
-	wg.Wait()
+		}
 
-	got, _ := m.Get("abc")
-	if got.Clicks != 100 {
-		t.Errorf("Clicks = %d, want 100", got.Clicks)
-	}
+		got, err := s.Clicks(t.Context(), "abc")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != 3 {
+			t.Errorf("Clicks = %d, want 3", got)
+		}
+	})
+
+	t.Run("clicks of unknown code", func(t *testing.T) {
+		s := newStore(t)
+
+		if err := s.IncrementClicks(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("IncrementClicks err = %v, want %v", err, ErrNotFound)
+		}
+		if _, err := s.Clicks(t.Context(), "missing"); !errors.Is(err, ErrNotFound) {
+			t.Errorf("Clicks err = %v, want %v", err, ErrNotFound)
+		}
+	})
+
+	// Run with `go test -race`: concurrent use must not lose writes.
+	t.Run("concurrent access", func(t *testing.T) {
+		s := newStore(t)
+		if err := s.Save(t.Context(), "shared", Link{URL: "https://go.dev"}); err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+
+		for i := range 50 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				code := fmt.Sprintf("code%d", i)
+				if err := s.Save(t.Context(), code, Link{URL: "https://go.dev"}); err != nil {
+					t.Errorf("Save(%q): %v", code, err)
+				}
+				if _, err := s.Get(t.Context(), code); err != nil {
+					t.Errorf("Get(%q): %v", code, err)
+				}
+				if err := s.IncrementClicks(t.Context(), "shared"); err != nil {
+					t.Errorf("IncrementClicks: %v", err)
+				}
+			}()
+		}
+		wg.Wait()
+
+		if got, _ := s.Clicks(t.Context(), "shared"); got != 50 {
+			t.Errorf("Clicks = %d, want 50", got)
+		}
+	})
 }

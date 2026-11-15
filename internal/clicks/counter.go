@@ -3,7 +3,9 @@
 package clicks
 
 import (
+	"context"
 	"log/slog"
+	"time"
 
 	"go-url-shortener/internal/storage"
 )
@@ -52,8 +54,21 @@ func (c *Counter) run() {
 	defer close(c.done)
 
 	for code := range c.events {
-		if err := c.store.IncrementClicks(code); err != nil {
-			slog.Error("failed to save click", "code", code, "error", err)
-		}
+		c.save(code)
+	}
+}
+
+// saveTimeout limits how long one click may wait for the storage, so a stuck
+// database cannot stall the queue forever.
+const saveTimeout = 5 * time.Second
+
+func (c *Counter) save(code string) {
+	// Clicks outlive the request that caused them, so they get their own
+	// context instead of the request's.
+	ctx, cancel := context.WithTimeout(context.Background(), saveTimeout)
+	defer cancel()
+
+	if err := c.store.IncrementClicks(ctx, code); err != nil {
+		slog.Error("failed to save click", "code", code, "error", err)
 	}
 }

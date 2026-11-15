@@ -1,6 +1,7 @@
 package clicks
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 
 func TestCounterSavesQueuedClicksOnClose(t *testing.T) {
 	store := storage.NewMemory()
-	if err := store.Save("abc", storage.Link{URL: "https://go.dev"}); err != nil {
+	if err := store.Save(t.Context(), "abc", storage.Link{URL: "https://go.dev"}); err != nil {
 		t.Fatal(err)
 	}
 	c := NewCounter(store, 10)
@@ -20,9 +21,8 @@ func TestCounterSavesQueuedClicksOnClose(t *testing.T) {
 	}
 	c.Close() // waits until every queued click is saved
 
-	got, _ := store.Get("abc")
-	if got.Clicks != 5 {
-		t.Errorf("Clicks = %d, want 5", got.Clicks)
+	if got, _ := store.Clicks(t.Context(), "abc"); got != 5 {
+		t.Errorf("Clicks = %d, want 5", got)
 	}
 }
 
@@ -34,15 +34,15 @@ type slowStorage struct {
 	release chan struct{}
 }
 
-func (s *slowStorage) IncrementClicks(code string) error {
+func (s *slowStorage) IncrementClicks(ctx context.Context, code string) error {
 	s.entered <- struct{}{}
 	<-s.release
-	return s.Memory.IncrementClicks(code)
+	return s.Memory.IncrementClicks(ctx, code)
 }
 
 func TestCounterRecordNeverBlocks(t *testing.T) {
 	mem := storage.NewMemory()
-	if err := mem.Save("abc", storage.Link{URL: "https://go.dev"}); err != nil {
+	if err := mem.Save(t.Context(), "abc", storage.Link{URL: "https://go.dev"}); err != nil {
 		t.Fatal(err)
 	}
 	store := &slowStorage{Memory: mem, entered: make(chan struct{}, 10), release: make(chan struct{})}
@@ -69,8 +69,7 @@ func TestCounterRecordNeverBlocks(t *testing.T) {
 	close(store.release)
 	c.Close()
 
-	got, _ := mem.Get("abc")
-	if got.Clicks != 2 {
-		t.Errorf("Clicks = %d, want 2 (the third click is dropped)", got.Clicks)
+	if got, _ := mem.Clicks(t.Context(), "abc"); got != 2 {
+		t.Errorf("Clicks = %d, want 2 (the third click is dropped)", got)
 	}
 }

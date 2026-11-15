@@ -11,7 +11,7 @@ import (
 
 func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
-	link, err := s.Store.Get(code)
+	link, err := s.Store.Get(r.Context(), code)
 
 	if errors.Is(err, storage.ErrNotFound) {
 		http.NotFound(w, r)

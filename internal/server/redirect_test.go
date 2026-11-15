@@ -10,7 +10,7 @@ import (
 
 func TestRedirectExistingCode(t *testing.T) {
 	store := storage.NewMemory()
-	if err := store.Save("abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
+	if err := store.Save(t.Context(), "abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
 		t.Fatal(err)
 	}
 	mux := newTestMux(store)
@@ -28,7 +28,7 @@ func TestRedirectExistingCode(t *testing.T) {
 func TestRedirectNotYetExpired(t *testing.T) {
 	store := storage.NewMemory()
 	link := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(time.Hour)}
-	if err := store.Save("abcdefgh", link); err != nil {
+	if err := store.Save(t.Context(), "abcdefgh", link); err != nil {
 		t.Fatal(err)
 	}
 	mux := newTestMux(store)
@@ -43,7 +43,7 @@ func TestRedirectNotYetExpired(t *testing.T) {
 func TestRedirectExpired(t *testing.T) {
 	store := storage.NewMemory()
 	link := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(-time.Minute)}
-	if err := store.Save("abcdefgh", link); err != nil {
+	if err := store.Save(t.Context(), "abcdefgh", link); err != nil {
 		t.Fatal(err)
 	}
 	mux := newTestMux(store)
@@ -119,7 +119,7 @@ func (f *fakeClicks) Record(code string) {
 
 func TestRedirectRecordsClick(t *testing.T) {
 	store := storage.NewMemory()
-	if err := store.Save("abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
+	if err := store.Save(t.Context(), "abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
 		t.Fatal(err)
 	}
 	recorder := &fakeClicks{}
@@ -137,7 +137,7 @@ func TestRedirectRecordsClick(t *testing.T) {
 func TestRedirectDoesNotRecordFailedVisits(t *testing.T) {
 	store := storage.NewMemory()
 	expired := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(-time.Minute)}
-	if err := store.Save("expired1", expired); err != nil {
+	if err := store.Save(t.Context(), "expired1", expired); err != nil {
 		t.Fatal(err)
 	}
 	recorder := &fakeClicks{}

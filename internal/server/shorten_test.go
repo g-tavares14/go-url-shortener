@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -34,7 +35,7 @@ func TestShortenValidURL(t *testing.T) {
 		t.Errorf("short_url = %q, want %q", resp.ShortURL, want)
 	}
 
-	got, err := store.Get(resp.Code)
+	got, err := store.Get(t.Context(), resp.Code)
 	if err != nil {
 		t.Fatalf("code %q was not saved: %v", resp.Code, err)
 	}
@@ -78,7 +79,7 @@ func TestShortenWithExpiresIn(t *testing.T) {
 		t.Errorf("expires_at = %v, want between %v and %v", resp.ExpiresAt, earliest, latest)
 	}
 
-	got, err := store.Get(resp.Code)
+	got, err := store.Get(t.Context(), resp.Code)
 	if err != nil {
 		t.Fatalf("code %q was not saved: %v", resp.Code, err)
 	}
@@ -122,17 +123,21 @@ type collidingStorage struct {
 	saves int
 }
 
-func (c *collidingStorage) Save(code string, link storage.Link) error {
+func (c *collidingStorage) Save(ctx context.Context, code string, link storage.Link) error {
 	c.saves++
 	return storage.ErrCodeExists
 }
 
-func (c *collidingStorage) Get(code string) (storage.Link, error) {
+func (c *collidingStorage) Get(ctx context.Context, code string) (storage.Link, error) {
 	return storage.Link{}, storage.ErrNotFound
 }
 
-func (c *collidingStorage) IncrementClicks(code string) error {
+func (c *collidingStorage) IncrementClicks(ctx context.Context, code string) error {
 	return storage.ErrNotFound
+}
+
+func (c *collidingStorage) Clicks(ctx context.Context, code string) (int64, error) {
+	return 0, storage.ErrNotFound
 }
 
 func TestShortenGivesUpAfterMaxAttempts(t *testing.T) {
@@ -152,16 +157,20 @@ func TestShortenGivesUpAfterMaxAttempts(t *testing.T) {
 // failingStorage returns an unexpected error, like a database that is down.
 type failingStorage struct{}
 
-func (failingStorage) Save(code string, link storage.Link) error {
+func (failingStorage) Save(ctx context.Context, code string, link storage.Link) error {
 	return errors.New("database is down")
 }
 
-func (failingStorage) Get(code string) (storage.Link, error) {
+func (failingStorage) Get(ctx context.Context, code string) (storage.Link, error) {
 	return storage.Link{}, errors.New("database is down")
 }
 
-func (failingStorage) IncrementClicks(code string) error {
+func (failingStorage) IncrementClicks(ctx context.Context, code string) error {
 	return errors.New("database is down")
+}
+
+func (failingStorage) Clicks(ctx context.Context, code string) (int64, error) {
+	return 0, errors.New("database is down")
 }
 
 func TestShortenStorageError(t *testing.T) {

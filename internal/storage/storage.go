@@ -1,18 +1,17 @@
 package storage
 
 import (
+	"context"
 	"errors"
-	"sync"
 	"time"
 )
 
-// Link is what a short code points to.
+// Link is what a short code points to. It never changes after it is saved,
+// which is what makes it safe to cache.
 type Link struct {
 	URL string
 	// ExpiresAt is when the link stops working. The zero value means it never expires.
 	ExpiresAt time.Time
-	// Clicks counts how many times the link was opened.
-	Clicks int64
 }
 
 // Expired reports whether the link has expired at the given time.
@@ -20,62 +19,16 @@ func (l Link) Expired(now time.Time) bool {
 	return !l.ExpiresAt.IsZero() && !now.Before(l.ExpiresAt)
 }
 
+// Storage keeps links and their click counts. Clicks live apart from Link
+// because they change on every visit, while a Link never does.
 type Storage interface {
-	Save(code string, link Link) error
-	Get(code string) (Link, error)
-	IncrementClicks(code string) error
+	Save(ctx context.Context, code string, link Link) error
+	Get(ctx context.Context, code string) (Link, error)
+	IncrementClicks(ctx context.Context, code string) error
+	Clicks(ctx context.Context, code string) (int64, error)
 }
 
 var (
 	ErrNotFound   = errors.New("not found")
 	ErrCodeExists = errors.New("code already exists")
 )
-
-type Memory struct {
-	mu    sync.RWMutex
-	links map[string]Link
-}
-
-func NewMemory() *Memory {
-	return &Memory{
-		links: make(map[string]Link),
-	}
-}
-
-func (m *Memory) Save(code string, link Link) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, ok := m.links[code]; ok {
-		return ErrCodeExists
-	}
-
-	m.links[code] = link
-	return nil
-}
-
-func (m *Memory) Get(code string) (Link, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	link, ok := m.links[code]
-	if !ok {
-		return Link{}, ErrNotFound
-	}
-
-	return link, nil
-}
-
-func (m *Memory) IncrementClicks(code string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	link, ok := m.links[code]
-	if !ok {
-		return ErrNotFound
-	}
-
-	link.Clicks++
-	m.links[code] = link
-	return nil
-}

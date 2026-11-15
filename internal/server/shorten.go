@@ -62,7 +62,7 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
-		err = s.Store.Save(code, link)
+		err = s.Store.Save(r.Context(), code, link)
 		if !errors.Is(err, storage.ErrCodeExists) {
 			break
 		}

@@ -19,7 +19,7 @@ type statsResponse struct {
 
 func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
-	link, err := s.Store.Get(code)
+	link, err := s.Store.Get(r.Context(), code)
 
 	if errors.Is(err, storage.ErrNotFound) {
 		http.NotFound(w, r)
@@ -32,7 +32,14 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := statsResponse{Code: code, URL: link.URL, Clicks: link.Clicks}
+	clicks, err := s.Store.Clicks(r.Context(), code)
+	if err != nil {
+		slog.Error("failed to get clicks", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	resp := statsResponse{Code: code, URL: link.URL, Clicks: clicks}
 	if !link.ExpiresAt.IsZero() {
 		resp.ExpiresAt = &link.ExpiresAt
 	}

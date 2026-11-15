@@ -12,11 +12,11 @@ import (
 func TestStats(t *testing.T) {
 	store := storage.NewMemory()
 	expiresAt := time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC)
-	if err := store.Save("abcdefgh", storage.Link{URL: "https://go.dev", ExpiresAt: expiresAt}); err != nil {
+	if err := store.Save(t.Context(), "abcdefgh", storage.Link{URL: "https://go.dev", ExpiresAt: expiresAt}); err != nil {
 		t.Fatal(err)
 	}
 	for range 2 {
-		if err := store.IncrementClicks("abcdefgh"); err != nil {
+		if err := store.IncrementClicks(t.Context(), "abcdefgh"); err != nil {
 			t.Fatal(err)
 		}
 	}
