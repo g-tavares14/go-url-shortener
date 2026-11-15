@@ -12,7 +12,8 @@ import (
 )
 
 type Server struct {
-	Store storage.Storage
+	Store   storage.Storage
+	BaseURL string
 }
 
 func (s *Server) Run(ctx context.Context, port int) error {

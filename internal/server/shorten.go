@@ -55,7 +55,7 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := shortenResponse{Code: code, ShortURL: "http://localhost:8080/" + code}
+	resp := shortenResponse{Code: code, ShortURL: s.BaseURL + "/" + code}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {

@@ -29,7 +29,7 @@ func TestShortenValidURL(t *testing.T) {
 	if len(resp.Code) != codeLength {
 		t.Errorf("len(code) = %d, want %d", len(resp.Code), codeLength)
 	}
-	if want := "http://localhost:8080/" + resp.Code; resp.ShortURL != want {
+	if want := "http://test.local/" + resp.Code; resp.ShortURL != want {
 		t.Errorf("short_url = %q, want %q", resp.ShortURL, want)
 	}
 

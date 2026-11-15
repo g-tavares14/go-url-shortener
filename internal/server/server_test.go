@@ -13,7 +13,7 @@ import (
 // newTestMux builds the same routes as Run, backed by the given storage,
 // without opening a port.
 func newTestMux(store storage.Storage) *http.ServeMux {
-	s := &Server{Store: store}
+	s := &Server{Store: store, BaseURL: "http://test.local"}
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 	return mux
