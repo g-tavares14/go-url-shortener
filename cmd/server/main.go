@@ -9,9 +9,13 @@ import (
 	"strconv"
 	"strings"
 
+	"go-url-shortener/internal/clicks"
 	"go-url-shortener/internal/server"
 	"go-url-shortener/internal/storage"
 )
+
+// clickBufferSize is how many clicks can wait to be saved before new ones are dropped.
+const clickBufferSize = 1024
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -33,12 +37,24 @@ func main() {
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
+	store := storage.NewMemory()
+
+	counter := clicks.NewCounter(store, clickBufferSize)
+	counter.Start()
+
 	srv := &server.Server{
-		Store:   storage.NewMemory(),
+		Store:   store,
 		BaseURL: baseURL,
+		Clicks:  counter,
 	}
 
-	if err := srv.Run(ctx, port); err != nil {
+	err := srv.Run(ctx, port)
+
+	// Run only returns after in-flight requests finish, so no more clicks
+	// arrive. Close saves the ones still queued.
+	counter.Close()
+
+	if err != nil {
 		slog.Error("server stopped", "error", err)
 		os.Exit(1)
 	}

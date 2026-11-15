@@ -11,6 +11,8 @@ type Link struct {
 	URL string
 	// ExpiresAt is when the link stops working. The zero value means it never expires.
 	ExpiresAt time.Time
+	// Clicks counts how many times the link was opened.
+	Clicks int64
 }
 
 // Expired reports whether the link has expired at the given time.
@@ -21,6 +23,7 @@ func (l Link) Expired(now time.Time) bool {
 type Storage interface {
 	Save(code string, link Link) error
 	Get(code string) (Link, error)
+	IncrementClicks(code string) error
 }
 
 var (
@@ -61,4 +64,18 @@ func (m *Memory) Get(code string) (Link, error) {
 	}
 
 	return link, nil
+}
+
+func (m *Memory) IncrementClicks(code string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	link, ok := m.links[code]
+	if !ok {
+		return ErrNotFound
+	}
+
+	link.Clicks++
+	m.links[code] = link
+	return nil
 }

@@ -29,5 +29,9 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.Clicks != nil {
+		s.Clicks.Record(code)
+	}
+
 	http.Redirect(w, r, link.URL, http.StatusFound)
 }

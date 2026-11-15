@@ -131,6 +131,10 @@ func (c *collidingStorage) Get(code string) (storage.Link, error) {
 	return storage.Link{}, storage.ErrNotFound
 }
 
+func (c *collidingStorage) IncrementClicks(code string) error {
+	return storage.ErrNotFound
+}
+
 func TestShortenGivesUpAfterMaxAttempts(t *testing.T) {
 	store := &collidingStorage{}
 	mux := newTestMux(store)
@@ -154,6 +158,10 @@ func (failingStorage) Save(code string, link storage.Link) error {
 
 func (failingStorage) Get(code string) (storage.Link, error) {
 	return storage.Link{}, errors.New("database is down")
+}
+
+func (failingStorage) IncrementClicks(code string) error {
+	return errors.New("database is down")
 }
 
 func TestShortenStorageError(t *testing.T) {

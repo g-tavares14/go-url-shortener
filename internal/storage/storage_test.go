@@ -112,3 +112,60 @@ func TestLinkExpired(t *testing.T) {
 		})
 	}
 }
+
+func TestMemoryIncrementClicks(t *testing.T) {
+	m := NewMemory()
+	if err := m.Save("abc", Link{URL: "https://go.dev"}); err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		if err := m.IncrementClicks("abc"); err != nil {
+			t.Fatalf("IncrementClicks: %v", err)
+		}
+	}
+
+	got, _ := m.Get("abc")
+	if got.Clicks != 3 {
+		t.Errorf("Clicks = %d, want 3", got.Clicks)
+	}
+	if got.URL != "https://go.dev" {
+		t.Errorf("URL = %q, want it unchanged", got.URL)
+	}
+}
+
+func TestMemoryIncrementClicksUnknownCode(t *testing.T) {
+	m := NewMemory()
+
+	err := m.IncrementClicks("missing")
+
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want %v", err, ErrNotFound)
+	}
+}
+
+// Run with `go test -race`: 100 goroutines incrementing the same link must
+// not lose any click.
+func TestMemoryIncrementClicksConcurrent(t *testing.T) {
+	m := NewMemory()
+	if err := m.Save("abc", Link{URL: "https://go.dev"}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+
+	for range 100 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := m.IncrementClicks("abc"); err != nil {
+				t.Errorf("IncrementClicks: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	got, _ := m.Get("abc")
+	if got.Clicks != 100 {
+		t.Errorf("Clicks = %d, want 100", got.Clicks)
+	}
+}

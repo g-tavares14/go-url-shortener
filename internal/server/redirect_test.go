@@ -107,3 +107,48 @@ func TestHealthStillWorks(t *testing.T) {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
+
+// fakeClicks remembers which codes were recorded.
+type fakeClicks struct {
+	codes []string
+}
+
+func (f *fakeClicks) Record(code string) {
+	f.codes = append(f.codes, code)
+}
+
+func TestRedirectRecordsClick(t *testing.T) {
+	store := storage.NewMemory()
+	if err := store.Save("abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &fakeClicks{}
+	s := &Server{Store: store, BaseURL: "http://test.local", Clicks: recorder}
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+
+	do(t, mux, "GET", "/abcdefgh", "")
+
+	if len(recorder.codes) != 1 || recorder.codes[0] != "abcdefgh" {
+		t.Errorf("recorded clicks = %v, want [abcdefgh]", recorder.codes)
+	}
+}
+
+func TestRedirectDoesNotRecordFailedVisits(t *testing.T) {
+	store := storage.NewMemory()
+	expired := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(-time.Minute)}
+	if err := store.Save("expired1", expired); err != nil {
+		t.Fatal(err)
+	}
+	recorder := &fakeClicks{}
+	s := &Server{Store: store, BaseURL: "http://test.local", Clicks: recorder}
+	mux := http.NewServeMux()
+	s.registerRoutes(mux)
+
+	do(t, mux, "GET", "/expired1", "")     // 410
+	do(t, mux, "GET", "/doesnotexist", "") // 404
+
+	if len(recorder.codes) != 0 {
+		t.Errorf("recorded clicks = %v, want none", recorder.codes)
+	}
+}

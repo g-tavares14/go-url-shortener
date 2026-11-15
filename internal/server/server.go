@@ -11,9 +11,16 @@ import (
 	"go-url-shortener/internal/storage"
 )
 
+// ClickRecorder records that a short link was opened.
+type ClickRecorder interface {
+	Record(code string)
+}
+
 type Server struct {
 	Store   storage.Storage
 	BaseURL string
+	// Clicks is optional: when nil, clicks are not counted.
+	Clicks ClickRecorder
 }
 
 func (s *Server) Run(ctx context.Context, port int) error {
