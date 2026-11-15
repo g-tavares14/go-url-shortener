@@ -3,11 +3,24 @@ package storage
 import (
 	"errors"
 	"sync"
+	"time"
 )
 
+// Link is what a short code points to.
+type Link struct {
+	URL string
+	// ExpiresAt is when the link stops working. The zero value means it never expires.
+	ExpiresAt time.Time
+}
+
+// Expired reports whether the link has expired at the given time.
+func (l Link) Expired(now time.Time) bool {
+	return !l.ExpiresAt.IsZero() && !now.Before(l.ExpiresAt)
+}
+
 type Storage interface {
-	Save(code, url string) error
-	Get(code string) (string, error)
+	Save(code string, link Link) error
+	Get(code string) (Link, error)
 }
 
 var (
@@ -16,36 +29,36 @@ var (
 )
 
 type Memory struct {
-	mu   sync.RWMutex
-	urls map[string]string
+	mu    sync.RWMutex
+	links map[string]Link
 }
 
 func NewMemory() *Memory {
 	return &Memory{
-		urls: make(map[string]string),
+		links: make(map[string]Link),
 	}
 }
 
-func (m *Memory) Save(code, url string) error {
+func (m *Memory) Save(code string, link Link) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, ok := m.urls[code]; ok {
+	if _, ok := m.links[code]; ok {
 		return ErrCodeExists
 	}
 
-	m.urls[code] = url
+	m.links[code] = link
 	return nil
 }
 
-func (m *Memory) Get(code string) (string, error) {
+func (m *Memory) Get(code string) (Link, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	url, ok := m.urls[code]
+	link, ok := m.links[code]
 	if !ok {
-		return "", ErrNotFound
+		return Link{}, ErrNotFound
 	}
 
-	return url, nil
+	return link, nil
 }

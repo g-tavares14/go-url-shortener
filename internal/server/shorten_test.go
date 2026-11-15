@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	"go-url-shortener/internal/storage"
 )
@@ -37,8 +38,52 @@ func TestShortenValidURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("code %q was not saved: %v", resp.Code, err)
 	}
-	if got != "https://go.dev" {
-		t.Errorf("saved url = %q, want %q", got, "https://go.dev")
+	if got.URL != "https://go.dev" {
+		t.Errorf("saved url = %q, want %q", got.URL, "https://go.dev")
+	}
+	if resp.ExpiresAt != nil {
+		t.Errorf("expires_at = %v, want it omitted", resp.ExpiresAt)
+	}
+	if !got.ExpiresAt.IsZero() {
+		t.Errorf("saved ExpiresAt = %v, want zero (never expires)", got.ExpiresAt)
+	}
+}
+
+func TestShortenWithExpiresIn(t *testing.T) {
+	store := storage.NewMemory()
+	mux := newTestMux(store)
+
+	before := time.Now()
+	rec := do(t, mux, "POST", "/shorten", `{"url":"https://go.dev","expires_in":3600}`)
+	after := time.Now()
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusCreated)
+	}
+
+	var resp shortenResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.ExpiresAt == nil {
+		t.Fatal("expires_at is missing from the response")
+	}
+
+	// The handler reads the clock between before and after, so the expiry
+	// must fall one hour after that window. the handler truncates to whole seconds,
+	// hence the one-second margin.
+	earliest := before.Add(time.Hour).Add(-time.Second)
+	latest := after.Add(time.Hour).Add(time.Second)
+	if resp.ExpiresAt.Before(earliest) || resp.ExpiresAt.After(latest) {
+		t.Errorf("expires_at = %v, want between %v and %v", resp.ExpiresAt, earliest, latest)
+	}
+
+	got, err := store.Get(resp.Code)
+	if err != nil {
+		t.Fatalf("code %q was not saved: %v", resp.Code, err)
+	}
+	if !got.ExpiresAt.Equal(*resp.ExpiresAt) {
+		t.Errorf("saved ExpiresAt = %v, response says %v", got.ExpiresAt, *resp.ExpiresAt)
 	}
 }
 
@@ -54,6 +99,9 @@ func TestShortenBadRequest(t *testing.T) {
 		{"relative path", `{"url":"/just/a/path"}`},
 		{"javascript scheme", `{"url":"javascript:alert(1)"}`},
 		{"ftp scheme", `{"url":"ftp://example.com/file"}`},
+		{"negative expires_in", `{"url":"https://go.dev","expires_in":-1}`},
+		{"expires_in over one year", `{"url":"https://go.dev","expires_in":31536001}`},
+		{"expires_in not a number", `{"url":"https://go.dev","expires_in":"1h"}`},
 	}
 
 	for _, tt := range tests {
@@ -74,13 +122,13 @@ type collidingStorage struct {
 	saves int
 }
 
-func (c *collidingStorage) Save(code, url string) error {
+func (c *collidingStorage) Save(code string, link storage.Link) error {
 	c.saves++
 	return storage.ErrCodeExists
 }
 
-func (c *collidingStorage) Get(code string) (string, error) {
-	return "", storage.ErrNotFound
+func (c *collidingStorage) Get(code string) (storage.Link, error) {
+	return storage.Link{}, storage.ErrNotFound
 }
 
 func TestShortenGivesUpAfterMaxAttempts(t *testing.T) {
@@ -100,12 +148,12 @@ func TestShortenGivesUpAfterMaxAttempts(t *testing.T) {
 // failingStorage returns an unexpected error, like a database that is down.
 type failingStorage struct{}
 
-func (failingStorage) Save(code, url string) error {
+func (failingStorage) Save(code string, link storage.Link) error {
 	return errors.New("database is down")
 }
 
-func (failingStorage) Get(code string) (string, error) {
-	return "", errors.New("database is down")
+func (failingStorage) Get(code string) (storage.Link, error) {
+	return storage.Link{}, errors.New("database is down")
 }
 
 func TestShortenStorageError(t *testing.T) {

@@ -3,13 +3,14 @@ package server
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"go-url-shortener/internal/storage"
 )
 
 func TestRedirectExistingCode(t *testing.T) {
 	store := storage.NewMemory()
-	if err := store.Save("abcdefgh", "https://go.dev"); err != nil {
+	if err := store.Save("abcdefgh", storage.Link{URL: "https://go.dev"}); err != nil {
 		t.Fatal(err)
 	}
 	mux := newTestMux(store)
@@ -21,6 +22,39 @@ func TestRedirectExistingCode(t *testing.T) {
 	}
 	if loc := rec.Header().Get("Location"); loc != "https://go.dev" {
 		t.Errorf("Location = %q, want %q", loc, "https://go.dev")
+	}
+}
+
+func TestRedirectNotYetExpired(t *testing.T) {
+	store := storage.NewMemory()
+	link := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(time.Hour)}
+	if err := store.Save("abcdefgh", link); err != nil {
+		t.Fatal(err)
+	}
+	mux := newTestMux(store)
+
+	rec := do(t, mux, "GET", "/abcdefgh", "")
+
+	if rec.Code != http.StatusFound {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusFound)
+	}
+}
+
+func TestRedirectExpired(t *testing.T) {
+	store := storage.NewMemory()
+	link := storage.Link{URL: "https://go.dev", ExpiresAt: time.Now().Add(-time.Minute)}
+	if err := store.Save("abcdefgh", link); err != nil {
+		t.Fatal(err)
+	}
+	mux := newTestMux(store)
+
+	rec := do(t, mux, "GET", "/abcdefgh", "")
+
+	if rec.Code != http.StatusGone {
+		t.Errorf("status = %d, want %d", rec.Code, http.StatusGone)
+	}
+	if loc := rec.Header().Get("Location"); loc != "" {
+		t.Errorf("Location = %q, want no redirect", loc)
 	}
 }
 
