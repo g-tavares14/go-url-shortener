@@ -2,10 +2,12 @@ package server
 
 import "crypto/rand"
 
+const codeLength = 8
+
 const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 func generateCode() (string, error) {
-	code := make([]byte, 8)
+	code := make([]byte, codeLength)
 
 	if _, err := rand.Read(code); err != nil {
 		return "", err

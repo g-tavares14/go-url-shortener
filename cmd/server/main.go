@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"go-url-shortener/internal/storage"
 	"log"
 	"os"
 	"os/signal"
 
 	"go-url-shortener/internal/server"
+	"go-url-shortener/internal/storage"
 )
 
 func main() {

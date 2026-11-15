@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"go-url-shortener/internal/storage"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"go-url-shortener/internal/storage"
 )
 
 type Server struct {
@@ -28,13 +29,13 @@ func (s *Server) Run(ctx context.Context, port int) error {
 		serveErr <- httpServer.ListenAndServe()
 	}()
 
-	slog.Info("Server is running", "port", port)
+	slog.Info("server is running", "port", port)
 
 	select {
 	case err := <-serveErr:
 		return err
 	case <-ctx.Done():
-		slog.Info("Shutting down server")
+		slog.Info("shutting down server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdownCtx); err != nil {

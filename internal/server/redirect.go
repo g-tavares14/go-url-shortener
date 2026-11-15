@@ -2,9 +2,10 @@ package server
 
 import (
 	"errors"
-	"go-url-shortener/internal/storage"
 	"log/slog"
 	"net/http"
+
+	"go-url-shortener/internal/storage"
 )
 
 func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +19,7 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		slog.Error("failed to get redirect", "error", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, target, http.StatusFound)

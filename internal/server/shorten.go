@@ -3,11 +3,14 @@ package server
 import (
 	"encoding/json"
 	"errors"
-	"go-url-shortener/internal/storage"
 	"log/slog"
 	"net/http"
 	"net/url"
+
+	"go-url-shortener/internal/storage"
 )
+
+const maxSaveAttempts = 5
 
 type shortenRequest struct {
 	URL string `json:"url"`
@@ -22,23 +25,23 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 	var req shortenRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
 
 	u, err := url.ParseRequestURI(req.URL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		http.Error(w, "invalid url", http.StatusBadRequest)
 		return
 	}
 
 	var code string
 
-	for range 5 {
+	for range maxSaveAttempts {
 		code, err = generateCode()
 		if err != nil {
-			slog.Error("Failed to generate code", slog.Any("err", err))
-			http.Error(w, "Failed to generate code", http.StatusInternalServerError)
+			slog.Error("failed to generate code", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		err = s.Store.Save(code, req.URL)
@@ -47,8 +50,8 @@ func (s *Server) shorten(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		slog.Error("Failed to save code", slog.Any("err", err))
-		http.Error(w, "Failed to save code", http.StatusInternalServerError)
+		slog.Error("failed to save url", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
